@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Titanic Survival Predictor</title>
+<style>
+  :root {
+    --navy: #0A1929;
+    --paper: #F0E8D5;
+    --brass: #A9812E;
+    --ink: #1C1C1C;
+    --survive: #1B4B43;
+    --lost: #8B2635;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--navy);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  .ticket {
+    background: var(--paper);
+    color: var(--ink);
+    max-width: 460px;
+    width: 100%;
+    border: 2px solid var(--brass);
+    border-radius: 4px;
+    padding: 28px 30px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 4px;
+    letter-spacing: 0.5px;
+  }
+  .sub {
+    font-size: 0.85rem;
+    color: #555;
+    margin: 0 0 20px;
+    border-bottom: 2px solid var(--brass);
+    padding-bottom: 14px;
+  }
+  label {
+    display: block;
+    font-size: 0.8rem;
+    margin: 12px 0 4px;
+    color: #333;
+  }
+  input, select {
+    width: 100%;
+    padding: 7px 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.95rem;
+    border: 1px solid #999;
+    border-radius: 3px;
+    background: #fff;
+    color: #0A1929;
+  }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  button {
+    margin-top: 20px;
+    width: 100%;
+    padding: 12px;
+    background: var(--navy);
+    color: var(--paper);
+    border: none;
+    border-radius: 3px;
+    font-size: 1rem;
+    font-family: Georgia, serif;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  #result {
+    margin-top: 20px;
+    padding: 16px;
+    border-radius: 3px;
+    text-align: center;
+    display: none;
+    font-family: Georgia, serif;
+  }
+  #result.survive { background: var(--survive); color: #fff; display: block; }
+  #result.lost { background: var(--lost); color: #fff; display: block; }
+  #result .verdict { font-size: 1.3rem; font-weight: bold; letter-spacing: 1px; }
+  #result .prob { font-size: 0.85rem; margin-top: 4px; opacity: 0.9; }
+</style>
+</head>
+<body>
+
+<div class="ticket">
+  <h1>Titanic Survival Predictor</h1>
+  <p class="sub">Enter passenger details — prediction runs a real logistic regression model trained on the Kaggle Titanic dataset (~81% accuracy).</p>
+
+  <label>Passenger Class</label>
+  <select id="pclass">
+    <option value="1">1st Class</option>
+    <option value="2">2nd Class</option>
+    <option value="3" selected>3rd Class</option>
+  </select>
+
+  <div class="row">
+    <div>
+      <label>Sex</label>
+      <select id="sex">
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+      </select>
+    </div>
+    <div>
+      <label>Age</label>
+      <input type="number" id="age" value="28" min="0" max="100">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Siblings/Spouses aboard</label>
+      <input type="number" id="sibsp" value="0" min="0">
+    </div>
+    <div>
+      <label>Parents/Children aboard</label>
+      <input type="number" id="parch" value="0" min="0">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Fare paid (£)</label>
+      <input type="number" id="fare" value="15" min="0" step="0.5">
+    </div>
+    <div>
+      <label>Port of Embarkation</label>
+      <select id="embarked">
+        <option value="S" selected>Southampton</option>
+        <option value="C">Cherbourg</option>
+        <option value="Q">Queenstown</option>
+      </select>
+    </div>
+  </div>
+
+  <label>Had a recorded cabin?</label>
+  <select id="hascabin">
+    <option value="0" selected>No</option>
+    <option value="1">Yes</option>
+  </select>
+
+  <button onclick="predict()">Predict Survival</button>
+
+  <div id="result">
+    <div class="verdict" id="verdict"></div>
+    <div class="prob" id="prob"></div>
+  </div>
+</div>
+
+<script>
+const INTERCEPT = -0.66371;
+const COEF = {
+  Pclass: -0.65210, Sex: -1.24055, Age: -0.49985, SibSp: -0.29705,
+  Parch: -0.06492, Fare: 0.06073, Embarked: -0.14692, Title: -0.04569,
+  FamilySize: -0.23546, IsAlone: -0.28183, HasCabin: 0.36576,
+  AgeBin: -0.01816, FareBin: -0.03964
+};
+const MEAN = {
+  Pclass: 2.3086, Sex: 0.6476, Age: 29.3924, SibSp: 0.5230, Parch: 0.3816,
+  Fare: 32.2042, Embarked: 1.5365, Title: 1.8956, FamilySize: 1.9046,
+  IsAlone: 0.6027, HasCabin: 0.2290, AgeBin: 0.9394, FareBin: 1.5006
+};
+const STD = {
+  Pclass: 0.8361, Sex: 0.4780, Age: 13.2684, SibSp: 1.1027, Parch: 0.8061,
+  Fare: 49.6934, Embarked: 0.7915, Title: 0.7885, FamilySize: 1.6135,
+  IsAlone: 0.4896, HasCabin: 0.4204, AgeBin: 1.4065, FareBin: 1.1172
+};
+
+function ageBin(age) {
+  if (age <= 12) return 1;
+  if (age <= 20) return 4;
+  if (age <= 40) return 0;
+  if (age <= 60) return 2;
+  return 3;
+}
+function fareBin(fare) {
+  if (fare <= 7.91) return 1;
+  if (fare <= 14.45) return 2;
+  if (fare <= 31) return 0;
+  return 3;
+}
+function guessTitle(sex, age) {
+  if (sex === 'male') return age <= 12 ? 0 : 2;
+  return 3;
+}
+
+function predict() {
+  const pclass = parseInt(document.getElementById('pclass').value);
+  const sex = document.getElementById('sex').value;
+  const age = parseFloat(document.getElementById('age').value);
+  const sibsp = parseInt(document.getElementById('sibsp').value);
+  const parch = parseInt(document.getElementById('parch').value);
+  const fare = parseFloat(document.getElementById('fare').value);
+  const embarkedMap = { C: 0, Q: 1, S: 2 };
+  const embarked = embarkedMap[document.getElementById('embarked').value];
+  const hasCabin = parseInt(document.getElementById('hascabin').value);
+
+  const familySize = sibsp + parch + 1;
+  const isAlone = familySize === 1 ? 1 : 0;
+  const title = guessTitle(sex, age);
+  const sexEnc = sex === 'female' ? 0 : 1;
+
+  const raw = {
+    Pclass: pclass, Sex: sexEnc, Age: age, SibSp: sibsp, Parch: parch,
+    Fare: fare, Embarked: embarked, Title: title, FamilySize: familySize,
+    IsAlone: isAlone, HasCabin: hasCabin, AgeBin: ageBin(age), FareBin: fareBin(fare)
+  };
+
+  let z = INTERCEPT;
+  for (const key in raw) {
+    const scaled = (raw[key] - MEAN[key]) / STD[key];
+    z += COEF[key] * scaled;
+  }
+  const probability = 1 / (1 + Math.exp(-z));
+  const survived = probability >= 0.5;
+
+  const result = document.getElementById('result');
+  result.className = survived ? 'survive' : 'lost';
+  document.getElementById('verdict').textContent = survived ? 'SURVIVED' : 'DID NOT SURVIVE';
+  document.getElementById('prob').textContent = 'Model confidence: ' + (probability * 100).toFixed(1) + '%';
+}
+</script>
+
+</body>
+</html>
